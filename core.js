@@ -112,7 +112,6 @@ po_analytics = {
             },
             sofas: { // sofas begin
                 outletModal : function(event) {
-                    console.log("active");
 
                     var target = $( event.target );
                     var label = "", customEvent = "", evalue = 0;
@@ -465,6 +464,28 @@ po_analytics = {
 
             } // sofas end
         }, //end pages
+        newsLetterSignUp : function() {
+                var eventCategory = "Miscellaneous", eventAction = "Newsletter", label = "", customEvent = "newsletter_failed";
+
+                var ph = $(this).closest("form");
+                $(ph).validate();
+                if(ph.valid()) {
+
+                    label = "Sign Up Complete";
+                    customEvent = "newsletter_signup";
+                }
+                else
+                {
+                    label = "Sign Up Failed";
+                }
+            dataLayer.push({
+                "clicked": label,
+                "event": customEvent,
+                "eventCategory": eventCategory,
+                "eventAction": eventAction
+            });
+
+        },
         postCodeSearch : function (event) {
             var label = window.location.href.indexOf("/sofas/") > -1 ? {l: "Sofas", m: "ranges" } : {l: "Non-Sofas", m: "generic"};
             var pc = po_analytics.support.postCodeArea($('input#userPostcode').val());
@@ -477,6 +498,58 @@ po_analytics = {
                     "eventVar6": pc
                 });
             }
+        },
+        liveChat : function(event) {
+            var target = $( event.target );
+            var eventCategory = "Contact Us", eventAction = "Live Chat", label = "";
+            var method = window.location.href.indexOf("/sofas/") > -1 ? {l: "Sofas", m: "ranges" } : {l: "Non-Sofas", m: "generic"};
+            if(target.is('img')) {
+                if(po_analytics.safeStorage.notDuplicate("local", "contact", {channel: "livechat"}, false, {channel: "livechat", status: "initiated", method: method.m}))
+                {
+                    dataLayer.push({
+                        "clicked": "Clicked",
+                        eventCategory: eventCategory,
+                        eventAction: eventAction,
+                        "event": "live_chat_init"
+                    });
+                }
+                setTimeout(function() {
+                    $('button.lp_submit_button').unbind(po_analytics.support.device,po_analytics.handlers.liveChat).bind(po_analytics.support.device,po_analytics.handlers.liveChat);
+                },4000);
+            }
+            else if(target.is('button'))
+            {
+
+                var input = $(".lp_pages_area :text").map(function() {
+                    return $(this).val();
+                });
+                var validated = true;
+
+                for(var i=0;i<input.length;i++)
+                {
+                    if(input[i] == null || input[i] == "")
+                    {
+                        validated = false;
+                    }
+                }
+                if(validated) {
+
+                    if(po_analytics.safeStorage.notDuplicate("local", "contact", {channel: "livechat", status: "complete"},true))
+                    {
+                        dataLayer.push({
+                            "clicked": "Active",
+                            eventCategory: eventCategory,
+                            eventAction: eventAction,
+                            "event": "live_chat_active"
+                        });
+                        po_analytics.safeStorage.updateItem("local", "contact", {channel: "livechat"}, {status: "complete"});
+
+                    }
+
+                }
+
+            }
+
         },
         externalLink : function() {
             var output = "External Link";
@@ -721,7 +794,19 @@ po_analytics = {
                     selectedFunction: po_analytics.handlers.externalLink,
                     elementToAttach: 'a[href*=http]',
                     attachType: po_analytics.support.device
+                },
+                {
+                    monitorElement: false,
+                    selectedFunction: po_analytics.handlers.liveChat,
+                    elementToAttach: 'img[alt="Live chat"]'
+                },
+                {
+                    monitorElement: false,
+                    selectedFunction: po_analytics.handlers.newsLetterSignUp,
+                    elementToAttach: '.banner__cta__newsletter form button',
+                    attachType: po_analytics.support.device
                 }
+
             ];
         },
         custom: {
@@ -742,7 +827,7 @@ po_analytics = {
                     selectedFunction: po_analytics.handlers.pages.sofas.clicked,
                     elementToAttach: 'button[click-live-chat], i.fa-search-plus, .range-items a:contains("Outlet")',
                     attachType: po_analytics.support.device,
-                    delay: 3000
+                    delay: 3500
                 },
                     {
                         monitorElement: 'div.materials',
