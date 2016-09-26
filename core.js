@@ -6,6 +6,39 @@ po_analytics = {
     processHistory : {
         initialise : function() {
             po_analytics.processHistory.videoWatches();
+            po_analytics.processHistory.searchNoInteraction();
+
+        },
+        searchNoInteraction : function() {
+            var ph = po_analytics.safeStorage.readItem("local","siteSearch",{tracked: false},"keyword");
+            if (ph.length > 0)
+            {
+                var output = [];
+                var counted = po_analytics.safeStorage.readItem("local","siteSearch",{tracked: true},"keyword");
+                for(var i = 0; i<ph.length; i++)
+                {
+                    if(counted.indexOf(ph[i]) < 0)
+                    {
+                        output.push(ph[i]);
+                    }
+                }
+
+                po_analytics.safeStorage.updateItem("local","siteSearch",{tracked: false},{tracked: true});
+
+                if(output.length > 0)
+                {
+
+                    var label = po_analytics.support.squareBrackets(output);
+                    dataLayer.push({"clicked" : label,
+                        "eventCategory" : "Search",
+                        "eventAction" : "No Interaction",
+                        "event" : "search_nointeraction",
+                        "eventVar6" : output.length.toString()
+                    });
+
+                }
+
+            }
 
 
         },
@@ -365,7 +398,7 @@ po_analytics = {
                         var data = event.data;
                         $('ul.swatch-group').unbind("scroll", po_analytics.handlers.pages.sofas.swatches.scrolled);
                         // we don't need to fire this lots
-                        if(po_analytics.safeStorage.notDuplicate("local","UX", {range: data.range, method: "scroll", colour: data.colour }, false)) {
+                        if(po_analytics.safeStorage.notDuplicate("local","UX", {details: data.range, action:  "scroll", method: data.colour }, false)) {
                             dataLayer.push({
                                 "clicked": data.colour,
                                 "event": "swatch_scroll",
@@ -464,6 +497,28 @@ po_analytics = {
 
             } // sofas end
         }, //end pages
+        searchItemSelected : function() {
+            var ph = $(this);
+            var eventVar6 = ph.is("img") ? "image" : "text"; //eventVar6
+            var container = ph.closest('li');
+            var results = container.closest('form').find('li');
+            var index = results.index(container) +1 ; //eventVar7
+            var keyword = container.closest('form').find('input[type=text]').val().toLowerCase().trim();
+            var range = po_analytics.support.toTitleCase(container.find('span.product-name a').text());
+            var evalue = parseInt(container.find('span.product-price em').text().replace("£","")); //  eventVar9
+            var label = po_analytics.support.squareBrackets([keyword,range]);
+            po_analytics.safeStorage.updateItem("local", "siteSearch", {keyword: keyword, tracked: false}, {tracked: true});
+
+            dataLayer.push({"clicked" : label,
+                "eventCategory" : "Search",
+                "eventAction" : "Item Selected",
+                "event" : "search_selected",
+                "evalue": evalue,
+                "eventVar6" : eventVar6,
+                "eventVar7" : evalue.toString(),
+                "eventVar8" : index.toString(),
+                "eventVar9" : results.length.toString()  });
+        },
         newsLetterSignUp : function() {
                 var eventCategory = "Miscellaneous", eventAction = "Newsletter", label = "", customEvent = "newsletter_failed";
 
@@ -606,7 +661,7 @@ po_analytics = {
                 }
                 dataLayer.push({"clicked" : keyword, "event" : "search_filtered_pageview", "evalue": evalue});
                 // no event, just a virtual pageview
-                po_analytics.safeStorage.write("local","siteSearch",{keyword: keyword, results: evalue });
+                po_analytics.safeStorage.write("local","siteSearch",{keyword: keyword, results: evalue, tracked: false });
             }
             if(settings.url == "https://api.sofology.co.uk/api/callback")
             {
@@ -906,640 +961,595 @@ po_analytics = {
         po_analytics.processHistory.initialise();
 
 
-    }
-};
+    },
+    custom : {
 
-po_analytics.cookies = {
-// Work in progress
-    // main purpose here is to count how many sessions without converting. Cookie acts like a counter that is reset when a desired action occurs.
-    // Two types of interaction are supported,
-    // 1. Regular sessions. A cookie is dropped that lasts 120 days and is incremented with each return visit.
-    // 2. Sessions with "desired" interaction, e.g. reaching the checkout URL.
-    // This can occur in 2 ways.
-    // (i) The URL triggering the event can be added to the interactionURLs array, e.g. var po_data = {interactionURLs : ["http://www.example.com/checkout/", "https://www.example.com/checkout/"]}
-    // When the initialise function is called, this will be checked and if the URL matches the specified ones.
-    // (ii) Just calling the po_analytics.cookies.interaction() function
-    // The interaction session counter is incremented and the session is classed as a session with interaction. Checks mean that this can only occur once in that session.
-    // These counters are both reset when a specified action occurrs. This can occur in 2 ways
-    // (i) The URL will need adding to the transactionURLs array, e.g. var po_data = {transactionURLs : ["http://www.example.com/checkout/success", "https://www.example.com/checkout/success"]}
-
-    names: {
-        // names of cookies can be customised based on po_data settings, e.g. var po_data = {visitCookie: "_welcome", liveCookie: "_active"}
-        session: window.po_data && po_data.visitCookie ? po_data.visitCookie : "_sessionCookie",
-        live: window.po_data && po_data.liveCookie ? po_data.liveCookie : "_liveCookie",
-        interaction: window.po_data && po_data.interactionCookie ? po_data.interactionCookie : "_ixCookie"
-    },
-    data: {
-        sessionID: po_analytics.safeStorage ? po_analytics.safeStorage.readItem("local", "sessionInfo", "id")[0] : null,
-        domain: window.po_data && po_data.cookieDomain ? po_data.cookieDomain : ("^" + window.location.hostname).replace("^www.", "").replace("^", ""),
-        interactionURLs: window.po_data && po_data.interactionURLs ? po_data.interactionURLs : [],
-        transactionURLs: window.po_data && po_data.transactionURLs ? po_data.transactionURLs : []
-    },
-    checkURLReached: function(data) {
-        data = (typeof data === 'undefined') ? this.cookies.interactionURLs : data;
-        if (data.length > 0) {
-            return (data.indexOf(po_analytics.support.cleanURL(true)) > -1);
-
-        } else {
-            return false;
-        }
-    },
-    erase: function(name) {
-        this.create(name, "", -1);
-    },
-    read: function(name) {
-        var nameEQ = name + "=";
-        var ca = document.cookie.split(';');
-        for (var i = 0; i < ca.length; i++) {
-            var c = ca[i];
-            while (c.charAt(0) == ' ') c = c.substring(1, c.length);
-            if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
-        }
-        return null;
-    },
-    update: function(name, initValue, days) {
-        if (this.read(name) !== null) {
-            var value = this.read(name);
-            this.create(name, value, days);
-        } else {
-            this.create(name, initValue, days);
-        }
-    },
-    create: function(name, value, days) {
-        var path = "; path=/";
-        if (days) {
-            var date = new Date();
-            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-            var expires = "; expires=" + date.toGMTString();
-        } else var expires = "";
-        if (this.data.domain) {
-            path = ";domain=." + this.data.domain + path;
-        }
-        document.cookie = name + "=" + value + expires + path;
-    },
-    increment: function(name) {
-        var cookieVisits = this.read(name);
-        var totalVisits = cookieVisits ? parseInt(cookieVisits) : 0;
-        this.create(name, totalVisits + 1, 120);
-    },
-    liveSession: function() {
-        return this.read(this.names.live);
-    },
-    sessionCounter: function() {
-        // easy way of accessing how many non-converting sessions
-        return this.read(this.names.session);
-    },
-    interactionCounter: function() {
-        // easy way of accessing how many non-converting sessions that had interactions
-        return this.read(this.names.interaction) ? this.read(this.names.interaction) : 0;
-    },
-    interaction: function() {
-        if (this.liveSession() == 1) {
-            this.increment(this.names.interaction);
-            this.erase(this.names.live);
-            this.update(this.names.live, 2, 0);
-        }
-    },
-    reset: function() {
-        this.erase(this.names.live);
-        this.erase(this.names.interaction);
-    },
-    initialise: function() {
-
-        if (this.liveSession() == null) {
-            this.increment(this.names.session);
-        }
-        this.update(this.names.live, 1, 0);
-        if (this.liveSession() == 1 && this.checkURLReached(this.data.interactionURLs)) {
-            this.interaction();
-        }
-        if (this.checkURLReached(this.data.transactionURLs)) {
-            this.reset();
-        }
-        return true;
-    }
-
-
-};
-
-po_analytics.custom = {
-
-    determinePageType : function()
-    {
-
-
-    },
-    variantToColour : function(shade,product)
-    {
-        var output = {};
-        var name;
-        for(var x1 in product)
+        determinePageType : function()
         {
-            var colour = product[x1].name;
-            for(var x2 in product[x1].materialQualityTypes)
+            var categories = ["/sofa-beds", "/fabric-sofas", "/corner-sofas", "/recliner-sofas", "/leather-sofas", "/just-arrived", "/express-sofas"];
+            var collections = ["/comfort", "/design-comfort", "/classical", "/studio", "/twisted-classic", "/vintage"];
+
+            var currentURL = po_analytics.support.cleanURL();
+
+            if(currentURL == "/") {
+                return "home";
+            }
+            else if(currentURL.indexOf('/sofas/') > -1)
             {
-                for(var x3 in product[x1].materialQualityTypes[x2].variants)
+                return "range";
+            }
+            else if(categories.indexOf(currentURL) > -1)
+            {
+                return "categories";
+            }
+            else if(collections.indexOf(currentURL) > -1)
+            {
+                return "collections";
+            }
+            else if(currentURL.indexOf('/clearance-sofas') > -1)
+            {
+                return "outlets";
+            }
+            else if(currentURL.indexOf('/store-locator') > -1 || currentURL.indexOf('/stores/') > -1)
+            {
+                return "stores";
+            }
+            else if(currentURL.indexOf('/sofology/') > -1)
+            {
+                return "brand";
+            }
+            else
+            {
+                return "unknown";
+            }
+
+        },
+        variantToColour : function(shade,product)
+        {
+            var output = {};
+            var name;
+            for(var x1 in product)
+            {
+                var colour = product[x1].name;
+                for(var x2 in product[x1].materialQualityTypes)
                 {
-                    name = po_analytics.support.toTitleCase(product[x1].materialQualityTypes[x2].variants[x3].code);
-                    output[name] = colour;
+                    for(var x3 in product[x1].materialQualityTypes[x2].variants)
+                    {
+                        name = po_analytics.support.toTitleCase(product[x1].materialQualityTypes[x2].variants[x3].code);
+                        output[name] = colour;
+                    }
                 }
             }
-        }
-        if(typeof output[shade] !== 'undefined')
-        {
-            return output[shade];
-        }
-        else return "?";
-    },
-    getSwatchPos : function(app) {
-
-        var ph = app.model.range.activeColour.activeQuality.variants;
-        var evalue  = 0;
-        var code = app.model.range.activeColour.activeQuality.activeVariant.code;
-        for(var x in ph)
-        {
-            if(code == ph[x].code)
+            if(typeof output[shade] !== 'undefined')
             {
-                evalue = (parseInt(x)+1);
+                return output[shade];
             }
+            else return "?";
+        },
+        getSwatchPos : function(app) {
+
+            var ph = app.model.range.activeColour.activeQuality.variants;
+            var evalue  = 0;
+            var code = app.model.range.activeColour.activeQuality.activeVariant.code;
+            for(var x in ph)
+            {
+                if(code == ph[x].code)
+                {
+                    evalue = (parseInt(x)+1);
+                }
+            }
+            return evalue;
         }
-        return evalue;
-    }
 
-};
+    },
+    cookies : {
+// Work in progress
+        // main purpose here is to count how many sessions without converting. Cookie acts like a counter that is reset when a desired action occurs.
+        // Two types of interaction are supported,
+        // 1. Regular sessions. A cookie is dropped that lasts 120 days and is incremented with each return visit.
+        // 2. Sessions with "desired" interaction, e.g. reaching the checkout URL.
+        // This can occur in 2 ways.
+        // (i) The URL triggering the event can be added to the interactionURLs array, e.g. var po_data = {interactionURLs : ["http://www.example.com/checkout/", "https://www.example.com/checkout/"]}
+        // When the initialise function is called, this will be checked and if the URL matches the specified ones.
+        // (ii) Just calling the po_analytics.cookies.interaction() function
+        // The interaction session counter is incremented and the session is classed as a session with interaction. Checks mean that this can only occur once in that session.
+        // These counters are both reset when a specified action occurrs. This can occur in 2 ways
+        // (i) The URL will need adding to the transactionURLs array, e.g. var po_data = {transactionURLs : ["http://www.example.com/checkout/success", "https://www.example.com/checkout/success"]}
 
-po_analytics.support = {
-    monitorChanges : function(pageChecked, monitorArray, delayToAttach) {
-        if (typeof delayToAttach === 'undefined') {
-            delayToAttach = po_analytics.delayToAttach;
+        names: {
+            // names of cookies can be customised based on po_data settings, e.g. var po_data = {visitCookie: "_welcome", liveCookie: "_active"}
+            session: window.po_data && po_data.visitCookie ? po_data.visitCookie : "_sessionCookie",
+            live: window.po_data && po_data.liveCookie ? po_data.liveCookie : "_liveCookie",
+            interaction: window.po_data && po_data.interactionCookie ? po_data.interactionCookie : "_ixCookie"
+        },
+        data: {
+            sessionID: po_analytics.safeStorage ? po_analytics.safeStorage.readItem("local", "sessionInfo", "id")[0] : null,
+            domain: window.po_data && po_data.cookieDomain ? po_data.cookieDomain : ("^" + window.location.hostname).replace("^www.", "").replace("^", ""),
+            interactionURLs: window.po_data && po_data.interactionURLs ? po_data.interactionURLs : [],
+            transactionURLs: window.po_data && po_data.transactionURLs ? po_data.transactionURLs : []
+        },
+        checkURLReached: function(data) {
+            data = (typeof data === 'undefined') ? this.cookies.interactionURLs : data;
+            if (data.length > 0) {
+                return (data.indexOf(po_analytics.support.cleanURL(true)) > -1);
 
+            } else {
+                return false;
+            }
+        },
+        erase: function(name) {
+            this.create(name, "", -1);
+        },
+        read: function(name) {
+            var nameEQ = name + "=";
+            var ca = document.cookie.split(';');
+            for (var i = 0; i < ca.length; i++) {
+                var c = ca[i];
+                while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+            }
+            return null;
+        },
+        update: function(name, initValue, days) {
+            if (this.read(name) !== null) {
+                var value = this.read(name);
+                this.create(name, value, days);
+            } else {
+                this.create(name, initValue, days);
+            }
+        },
+        create: function(name, value, days) {
+            var path = "; path=/";
+            if (days) {
+                var date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                var expires = "; expires=" + date.toGMTString();
+            } else var expires = "";
+            if (this.data.domain) {
+                path = ";domain=." + this.data.domain + path;
+            }
+            document.cookie = name + "=" + value + expires + path;
+        },
+        increment: function(name) {
+            var cookieVisits = this.read(name);
+            var totalVisits = cookieVisits ? parseInt(cookieVisits) : 0;
+            this.create(name, totalVisits + 1, 120);
+        },
+        liveSession: function() {
+            return this.read(this.names.live);
+        },
+        sessionCounter: function() {
+            // easy way of accessing how many non-converting sessions
+            return this.read(this.names.session);
+        },
+        interactionCounter: function() {
+            // easy way of accessing how many non-converting sessions that had interactions
+            return this.read(this.names.interaction) ? this.read(this.names.interaction) : 0;
+        },
+        interaction: function() {
+            if (this.liveSession() == 1) {
+                this.increment(this.names.interaction);
+                this.erase(this.names.live);
+                this.update(this.names.live, 2, 0);
+            }
+        },
+        reset: function() {
+            this.erase(this.names.live);
+            this.erase(this.names.interaction);
+        },
+        initialise: function() {
+
+            if (this.liveSession() == null) {
+                this.increment(this.names.session);
+            }
+            this.update(this.names.live, 1, 0);
+            if (this.liveSession() == 1 && this.checkURLReached(this.data.interactionURLs)) {
+                this.interaction();
+            }
+            if (this.checkURLReached(this.data.transactionURLs)) {
+                this.reset();
+            }
+            return true;
         }
-        if (window.location.href.indexOf(pageChecked) > -1) {
-
-            for (var x in monitorArray) {
-
-                var monitorElement = monitorArray[x]['monitorElement'];
-                var elementAttribute = typeof monitorArray[x]['elementAttribute'] !== 'undefined' ? monitorArray[x]['elementAttribute'] : undefined;
-                var elementValue = typeof monitorArray[x]['elementValue'] !== 'undefined' ? monitorArray[x]['elementValue'] : undefined;
-                var attachType = typeof monitorArray[x]['attachType'] !== 'undefined' ? monitorArray[x]['attachType'] : "click";
-                var delay = typeof monitorArray[x]['delay'] !== 'undefined' ? monitorArray[x]['delay'] : delayToAttach;
-                var selectedFunction = monitorArray[x]['selectedFunction'];
-                var elementToAttach = monitorArray[x]['elementToAttach'];
 
 
-                (function(eL, aT, sF) {
+    },
+    support: {
+        monitorChanges : function(pageChecked, monitorArray, delayToAttach) {
+            if (typeof delayToAttach === 'undefined') {
+                delayToAttach = po_analytics.delayToAttach;
 
-                    // bind first use.
-                    setTimeout(function() {
+            }
+            if (window.location.href.indexOf(pageChecked) > -1) {
 
-                        $(eL).unbind(aT, sF).bind(aT, sF);
+                for (var x in monitorArray) {
 
-                    }, delay);
+                    var monitorElement = monitorArray[x]['monitorElement'];
+                    var elementAttribute = typeof monitorArray[x]['elementAttribute'] !== 'undefined' ? monitorArray[x]['elementAttribute'] : undefined;
+                    var elementValue = typeof monitorArray[x]['elementValue'] !== 'undefined' ? monitorArray[x]['elementValue'] : undefined;
+                    var attachType = typeof monitorArray[x]['attachType'] !== 'undefined' ? monitorArray[x]['attachType'] : "click";
+                    var delay = typeof monitorArray[x]['delay'] !== 'undefined' ? monitorArray[x]['delay'] : delayToAttach;
+                    var selectedFunction = monitorArray[x]['selectedFunction'];
+                    var elementToAttach = monitorArray[x]['elementToAttach'];
 
-                })(elementToAttach, attachType, selectedFunction);
 
-
-                if (monitorElement) {
-
-                    (function(index, mE, eA, eV, eL, aT, sF, dL) {
+                    (function(eL, aT, sF) {
 
                         // bind first use.
                         setTimeout(function() {
-                            // time out to load things
 
-                            var contentDiv = document.querySelector(mE) ? document.querySelector(mE) : undefined;
-                            if (typeof contentDiv !== 'undefined') {
-                                var MutationObserver = window.MutationObserver || window.WebKitMutationObserver;
-                                po_analytics.observer[index] = new MutationObserver(function(mutations) {
-                                    mutations.forEach(function(mutation) {
-
-                                        if (mutation.target.hasAttribute(eA)) {
-
-                                            if (mutation.target.getAttribute(eA).indexOf(eV) > -1) {
-                                                (function(eTA, aTy, seF) {
-                                                    setTimeout(function() {
-                                                        $(eTA).unbind(aTy, seF).bind(aTy, seF);
-                                                    }, (dL));
-                                                })(eL, aT, sF);
-                                            }
-                                        }
-                                    });
-                                });
-                                var config = {
-                                    attributes: true,
-                                    attributeOldValue: true,
-                                    childList: true,
-                                    subtree: true
-                                };
-                                po_analytics.observer[index].observe(contentDiv, config);
-
-                            }
-
+                            $(eL).unbind(aT, sF).bind(aT, sF);
 
                         }, delay);
 
-                    })(x, monitorElement, elementAttribute, elementValue, elementToAttach, attachType, selectedFunction, delay);
+                    })(elementToAttach, attachType, selectedFunction);
 
 
-                } // end If
-            }
-        }
-    }, //end
-    postCodeArea : function (value) {
+                    if (monitorElement) {
 
-        var patt = new RegExp("[A-Za-z]{1,2}[0-9]{1,2}[A-Za-z]{0,1}");
-        var res = patt.exec(value).toString();
-        while(res.length >= value.length - 2 && value.length > 4)
-        {
-            res = res.slice(0,-1);
-        }
-        return res.toUpperCase();
+                        (function(index, mE, eA, eV, eL, aT, sF, dL) {
 
-    },
-    getPercentage : function(number, divisor, cap) {
-        cap = typeof cap === undefined;
-        var percentage = (number / divisor) * 100;
-        percentage = parseFloat(percentage.toFixed(1));
-        if(percentage>100 && cap)
-        {
-            return 100;
-        }
-        return percentage
-    },
-    cleanURL: function(pageOnly) {
-        // gets the URL and cleans it.By default, strips out some common URL parameters. Optional parameter pageOnly. Set it to anything to include the domain and protocol.
-        pageOnly = (typeof pageOnly === 'undefined');
-        var host = "";
-        if (!pageOnly) {
-            host = window.location.href.split(window.location.hostname)[0] + window.location.hostname;
-        }
-        var ignoredParameters = window.po_data && po_data.ignoredParameters ? po_data.ignoredParameters : ["gclid", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
-        var url = window.location.href.split(window.location.hostname)[1].toLowerCase();
-        var ph = url.split("#")[0].split("?");
-        if (ph[1] === undefined) {
-            return host + ph[0];
-        } else {
+                            // bind first use.
+                            setTimeout(function() {
+                                // time out to load things
 
-            var query = {};
-            var a = ph[1].split('&');
-            for (var i = 0; i < a.length; i++) {
+                                var contentDiv = document.querySelector(mE) ? document.querySelector(mE) : undefined;
+                                if (typeof contentDiv !== 'undefined') {
+                                    var MutationObserver = window.MutationObserver || window.WebKitMutationObserver;
+                                    po_analytics.observer[index] = new MutationObserver(function(mutations) {
+                                        mutations.forEach(function(mutation) {
 
-                var b = a[i].split('=');
-                query[decodeURIComponent(b[0])] = decodeURIComponent(b[1] || '');
-            }
-            for (var i = 0; i < ignoredParameters.length; i++) {
-                delete query[ignoredParameters[i]];
-            }
-            var str = [];
-            for (var p in query)
-                if (query.hasOwnProperty(p)) {
-                    str.push(encodeURIComponent(p) + "=" + encodeURIComponent(query[p]));
+                                            if (mutation.target.hasAttribute(eA)) {
+
+                                                if (mutation.target.getAttribute(eA).indexOf(eV) > -1) {
+                                                    (function(eTA, aTy, seF) {
+                                                        setTimeout(function() {
+                                                            $(eTA).unbind(aTy, seF).bind(aTy, seF);
+                                                        }, (dL));
+                                                    })(eL, aT, sF);
+                                                }
+                                            }
+                                        });
+                                    });
+                                    var config = {
+                                        attributes: true,
+                                        attributeOldValue: true,
+                                        childList: true,
+                                        subtree: true
+                                    };
+                                    po_analytics.observer[index].observe(contentDiv, config);
+
+                                }
+
+
+                            }, delay);
+
+                        })(x, monitorElement, elementAttribute, elementValue, elementToAttach, attachType, selectedFunction, delay);
+
+
+                    } // end If
                 }
-            ph[1] = str.join("&");
-            var qm = ph[1].length > 0 ? "?" : "";
-            return host + ph[0] + qm + ph[1];
-        }
+            }
+        }, //end
+        postCodeArea : function (value) {
 
-    },
-    getTime: function() {
-        // readable timestamp
-        var now = new Date();
-        var tzo = -now.getTimezoneOffset();
-        var dif = tzo >= 0 ? '+' : '-';
-        var pad = function(num) {
-            var norm = Math.abs(Math.floor(num));
-            return (norm < 10 ? '0' : '') + norm;
-        };
-        return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()) + '.' + pad(now.getMilliseconds()) + dif + pad(tzo / 60) + ':' + pad(tzo % 60);
-    },
-    processResponse: function(data, value) {
-        // reads query string for specified value
-        var container = {};
-        data.split("&").forEach(function(item) {
-            var result = item.split("=");
-            container[result[0]] = decodeURIComponent(result[1]).replace(/\+/g, ' ');
-        });
-        return container[value] ? container[value] : "";
-    },
-    squareBrackets: function(strings) {
-        // encapsulates array with square brackets
-        var output = [];
-        for (var x in strings) {
-            output.push("[" + strings[x] + "]");
-        }
-        return output.join(" ");
-    },
-    device: ('ontouchstart' in document.documentElement) ? 'touchstart' : 'mousedown',
+            var patt = new RegExp("[A-Za-z]{1,2}[0-9]{1,2}[A-Za-z]{0,1}");
+            var res = patt.exec(value).toString();
+            while(res.length >= value.length - 2 && value.length > 4)
+            {
+                res = res.slice(0,-1);
+            }
+            return res.toUpperCase();
 
-    sessionID: function() {
-        // generates random session ID. Stored elsewhere.
-        return new Date().getTime() + '.' + Math.random().toString(36).substring(5);
-    },
-    toTitleCase: function(str) {
-        // proper cases text.
-        return str.replace(/\w\S*/g, function(txt) {
-            return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
-        });
-    }
-
-};
-
-po_analytics.safeStorage = {
-
-    protocols: ["now", "local", "session"],
-    expireMethods: ["days", "expire"],
-    pageCache: {},
-    initialise : function() {
-
-        if(po_analytics.counter>1 && po_analytics.safeStorage.constants.mode == "days")
-        {
-            // angularJS pages so no unload
-            po_analytics.safeStorage.unloadUpdate();
-        }
-        po_analytics.safeStorage.setUpSession();
-
-        if (po_analytics.safeStorage.constants.mode == "days") {
-            po_analytics.safeStorage.processData();
-
-
-            window.addEventListener("beforeunload", function(e) {
-                po_analytics.safeStorage.unloadUpdate();
-                return null;
-            });
-            po_analytics.safeStorage.constants.fired = false;
-        }
-
-    },
-    constants : {
-        fired: false,
-        version: 1,
-        expireTime: window.po_data && po_data.expireTime ? po_data.expireTime : 30,
-        daysExpire: window.po_data && po_data.daysExpire ? po_data.expireTime : 120,
-        key: "43534534BZZJ",
-        sessionID: function() {
-            if (po_analytics.safeStorage.pageCache && po_analytics.safeStorage.pageCache.sessionInfo && po_analytics.safeStorage.pageCache.sessionInfo.data) {
-                return po_analytics.safeStorage.pageCache.sessionInfo.data[0].id;
-            } else return po_analytics.safeStorage.readItem("now", "sessionInfo", "id")[0];
         },
-        mode: window.po_data && po_data.mode ? po_data.mode : "days"
-        // other value is "expire"
-    },
-    resolveVersionConflicts : function(newList, oldList) {
+        getPercentage : function(number, divisor, cap) {
+            cap = typeof cap === undefined;
+            var percentage = (number / divisor) * 100;
+            percentage = parseFloat(percentage.toFixed(1));
+            if(percentage>100 && cap)
+            {
+                return 100;
+            }
+            return percentage
+        },
+        cleanURL: function(pageOnly) {
+            // gets the URL and cleans it.By default, strips out some common URL parameters. Optional parameter pageOnly. Set it to anything to include the domain and protocol.
+            pageOnly = (typeof pageOnly === 'undefined');
+            var host = "";
+            if (!pageOnly) {
+                host = window.location.href.split(window.location.hostname)[0] + window.location.hostname;
+            }
+            var ignoredParameters = window.po_data && po_data.ignoredParameters ? po_data.ignoredParameters : ["gclid", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+            var url = window.location.href.split(window.location.hostname)[1].toLowerCase();
+            var ph = url.split("#")[0].split("?");
+            if (ph[1] === undefined) {
+                return host + ph[0];
+            } else {
 
-        var newListoTS = newList.ots;
-        var filteredList = [];
-        var previousTS = [];
-        var newTS = [];
-        var updates = false;
-        for (var i = 0; i < newList.data.length; i++) { // loop through and find the fresh stuff
-            if (newList.data[i] && newList.data[i].v) {
-                if (newList.data[i].v > newList.v) { // newer than what was loaded into pagecache
-                    updates = true;
-                    newList.data[i].v = oldList.v + 1;
-                    filteredList.push(newList.data[i]);
-                    newTS.push(newList.data[i].ts);
-                } else {
-                    previousTS.push(newList.data[i].ts);
+                var query = {};
+                var a = ph[1].split('&');
+                for (var i = 0; i < a.length; i++) {
+
+                    var b = a[i].split('=');
+                    query[decodeURIComponent(b[0])] = decodeURIComponent(b[1] || '');
                 }
+                for (var i = 0; i < ignoredParameters.length; i++) {
+                    delete query[ignoredParameters[i]];
+                }
+                var str = [];
+                for (var p in query)
+                    if (query.hasOwnProperty(p)) {
+                        str.push(encodeURIComponent(p) + "=" + encodeURIComponent(query[p]));
+                    }
+                ph[1] = str.join("&");
+                var qm = ph[1].length > 0 ? "?" : "";
+                return host + ph[0] + qm + ph[1];
             }
 
-        } // end fresh stuff check
-        if (updates && oldList.data) {
-            for (var i = 0; i < oldList.data.length; i++) { // check each value
-                var noConflict = newTS.indexOf(oldList.data[i].ts);
-                if (noConflict < 0) { // not in list, add away
-                    if (oldList.data[i].ts > newListoTS || previousTS.indexOf(oldList.data[i].ts) > -1) // newer or found in both lists
-                    {
-                        filteredList.push(oldList.data[i]);
+        },
+        getTime: function() {
+            // readable timestamp
+            var now = new Date();
+            var tzo = -now.getTimezoneOffset();
+            var dif = tzo >= 0 ? '+' : '-';
+            var pad = function(num) {
+                var norm = Math.abs(Math.floor(num));
+                return (norm < 10 ? '0' : '') + norm;
+            };
+            return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()) + '.' + pad(now.getMilliseconds()) + dif + pad(tzo / 60) + ':' + pad(tzo % 60);
+        },
+        processResponse: function(data, value) {
+            // reads query string for specified value
+            var container = {};
+            data.split("&").forEach(function(item) {
+                var result = item.split("=");
+                container[result[0]] = decodeURIComponent(result[1]).replace(/\+/g, ' ');
+            });
+            return container[value] ? container[value] : "";
+        },
+        squareBrackets: function(strings) {
+            // encapsulates array with square brackets
+            var output = [];
+            for (var x in strings) {
+                output.push("[" + strings[x] + "]");
+            }
+            return output.join(" ");
+        },
+        device: ('ontouchstart' in document.documentElement) ? 'touchstart' : 'mousedown',
+
+        sessionID: function() {
+            // generates random session ID. Stored elsewhere.
+            return new Date().getTime() + '.' + Math.random().toString(36).substring(5);
+        },
+        toTitleCase: function(str) {
+            // proper cases text.
+            return str.replace(/\w\S*/g, function(txt) {
+                return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+            });
+        }
+
+    },
+    safeStorage : {
+
+        protocols: ["now", "local", "session"],
+        expireMethods: ["days", "expire"],
+        pageCache: {},
+        initialise : function() {
+
+            if(po_analytics.counter>1 && po_analytics.safeStorage.constants.mode == "days")
+            {
+                // angularJS pages so no unload
+                po_analytics.safeStorage.unloadUpdate();
+            }
+            po_analytics.safeStorage.setUpSession();
+
+            if (po_analytics.safeStorage.constants.mode == "days") {
+                po_analytics.safeStorage.processData();
+
+
+                window.addEventListener("beforeunload", function(e) {
+                    po_analytics.safeStorage.unloadUpdate();
+                    return null;
+                });
+                po_analytics.safeStorage.constants.fired = false;
+            }
+
+        },
+        constants : {
+            fired: false,
+            version: 1,
+            expireTime: window.po_data && po_data.expireTime ? po_data.expireTime : 30,
+            daysExpire: window.po_data && po_data.daysExpire ? po_data.expireTime : 120,
+            key: "43534534BZZJ",
+            sessionID: function() {
+                if (po_analytics.safeStorage.pageCache && po_analytics.safeStorage.pageCache.sessionInfo && po_analytics.safeStorage.pageCache.sessionInfo.data) {
+                    return po_analytics.safeStorage.pageCache.sessionInfo.data[0].id;
+                } else return po_analytics.safeStorage.readItem("now", "sessionInfo", "id")[0];
+            },
+            mode: window.po_data && po_data.mode ? po_data.mode : "days"
+            // other value is "expire"
+        },
+        resolveVersionConflicts : function(newList, oldList) {
+
+            var newListoTS = newList.ots;
+            var filteredList = [];
+            var previousTS = [];
+            var newTS = [];
+            var updates = false;
+            for (var i = 0; i < newList.data.length; i++) { // loop through and find the fresh stuff
+                if (newList.data[i] && newList.data[i].v) {
+                    if (newList.data[i].v > newList.v) { // newer than what was loaded into pagecache
+                        updates = true;
+                        newList.data[i].v = oldList.v + 1;
+                        filteredList.push(newList.data[i]);
+                        newTS.push(newList.data[i].ts);
                     } else {
-                        // it was probably deleted.
+                        previousTS.push(newList.data[i].ts);
                     }
-                } else { // try to merge values
-                    var replaceMentValue = {};
-                    for (var property in filteredList[noConflict]) { //loop through properties for conflicts
-                        if (oldList.data[i][property] !== undefined) {
-                            // matching check for conflicts
-                            if (oldList.data[i][property] == filteredList[noConflict][property]) {
-                                replaceMentValue[property] = oldList.data[i][property];
-                            } else if (oldList.data[i][property] === true || oldList.data[i][property] > filteredList[noConflict][property]) {
-                                // it's true or more, we keep values to to true
-                                replaceMentValue[property] = oldList.data[i][property];
+                }
+
+            } // end fresh stuff check
+            if (updates && oldList.data) {
+                for (var i = 0; i < oldList.data.length; i++) { // check each value
+                    var noConflict = newTS.indexOf(oldList.data[i].ts);
+                    if (noConflict < 0) { // not in list, add away
+                        if (oldList.data[i].ts > newListoTS || previousTS.indexOf(oldList.data[i].ts) > -1) // newer or found in both lists
+                        {
+                            filteredList.push(oldList.data[i]);
+                        } else {
+                            // it was probably deleted.
+                        }
+                    } else { // try to merge values
+                        var replaceMentValue = {};
+                        for (var property in filteredList[noConflict]) { //loop through properties for conflicts
+                            if (oldList.data[i][property] !== undefined) {
+                                // matching check for conflicts
+                                if (oldList.data[i][property] == filteredList[noConflict][property]) {
+                                    replaceMentValue[property] = oldList.data[i][property];
+                                } else if (oldList.data[i][property] === true || oldList.data[i][property] > filteredList[noConflict][property]) {
+                                    // it's true or more, we keep values to to true
+                                    replaceMentValue[property] = oldList.data[i][property];
+                                } else {
+                                    replaceMentValue[property] = filteredList[noConflict][property];
+                                }
+
                             } else {
+
                                 replaceMentValue[property] = filteredList[noConflict][property];
                             }
 
-                        } else {
+                        } //end loop, now add missing keys
 
-                            replaceMentValue[property] = filteredList[noConflict][property];
+                        for (var property in oldList.data[i]) {
+                            if (replaceMentValue[property] == undefined) {
+                                replaceMentValue[property] = oldList.data[i][property];
+                            }
                         }
+                        filteredList[noConflict] = replaceMentValue;
 
-                    } //end loop, now add missing keys
+                    } // end merge values
+                } // end check
+            }
+            if (updates) {
+                newList.v = oldList.v + 1;
+                newList.v = oldList.v + 1;
+                newList.data = filteredList;
+            }
+            return newList;
+        },
+        unloadUpdate : function() {
+            var response = false;
 
-                    for (var property in oldList.data[i]) {
-                        if (replaceMentValue[property] == undefined) {
-                            replaceMentValue[property] = oldList.data[i][property];
-                        }
-                    }
-                    filteredList[noConflict] = replaceMentValue;
+            if (po_analytics.safeStorage.constants.mode == 'days' && !po_analytics.safeStorage.constants.fired) {
+                for (var x in po_analytics.safeStorage.pageCache) {
+                    if (po_analytics.safeStorage.pageCache[x].updateFlag && po_analytics.safeStorage.pageCache[x].data && po_analytics.safeStorage.pageCache[x].v) {
+                        // valid
+                        var versionConflict = po_analytics.safeStorage.getItem("now", x);
+                        if (versionConflict !== null && versionConflict.v !== undefined) {
 
-                } // end merge values
-            } // end check
-        }
-        if (updates) {
-            newList.v = oldList.v + 1;
-            newList.v = oldList.v + 1;
-            newList.data = filteredList;
-        }
-        return newList;
-    },
-    unloadUpdate : function() {
-        var response = false;
+                            if (versionConflict.v == po_analytics.safeStorage.pageCache[x].v) {
+                                // no conflict, write away
+                                po_analytics.safeStorage.pageCache[x].updateFlag = false;
+                                po_analytics.safeStorage.write("now", x, po_analytics.safeStorage.pageCache[x].data, true);
+                                response = true;
+                            } else if (po_analytics.safeStorage.pageCache[x].v < versionConflict.v) {
+                                po_analytics.safeStorage.pageCache[x] = po_analytics.safeStorage.resolveVersionConflicts(po_analytics.safeStorage.pageCache[x], versionConflict);
+                                po_analytics.safeStorage.write("now", x, po_analytics.safeStorage.pageCache[x].data, true);
+                                response = true;
 
-        if (po_analytics.safeStorage.constants.mode == 'days' && !po_analytics.safeStorage.constants.fired) {
-            for (var x in po_analytics.safeStorage.pageCache) {
-                if (po_analytics.safeStorage.pageCache[x].updateFlag && po_analytics.safeStorage.pageCache[x].data && po_analytics.safeStorage.pageCache[x].v) {
-                    // valid
-                    var versionConflict = po_analytics.safeStorage.getItem("now", x);
-                    if (versionConflict !== null && versionConflict.v !== undefined) {
+                            } // end behind
 
-                        if (versionConflict.v == po_analytics.safeStorage.pageCache[x].v) {
-                            // no conflict, write away
+
+                        } else // blank slate, write away
+                        {
+
+                            //
                             po_analytics.safeStorage.pageCache[x].updateFlag = false;
                             po_analytics.safeStorage.write("now", x, po_analytics.safeStorage.pageCache[x].data, true);
                             response = true;
-                        } else if (po_analytics.safeStorage.pageCache[x].v < versionConflict.v) {
-                            po_analytics.safeStorage.pageCache[x] = po_analytics.safeStorage.resolveVersionConflicts(po_analytics.safeStorage.pageCache[x], versionConflict);
-                            po_analytics.safeStorage.write("now", x, po_analytics.safeStorage.pageCache[x].data, true);
-                            response = true;
-
-                        } // end behind
-
-
-                    } else // blank slate, write away
-                    {
-
-                        //
-                        po_analytics.safeStorage.pageCache[x].updateFlag = false;
-                        po_analytics.safeStorage.write("now", x, po_analytics.safeStorage.pageCache[x].data, true);
-                        response = true;
-                    }
-
-                }
-
-            }
-        }
-        po_analytics.safeStorage.constants.fired = true;
-        return response;
-
-    },
-    setUpSession : function() {
-        // used to add a session ID
-        var ph = po_analytics.safeStorage.getItem("now", "sessionInfo");
-        var deleted = false;
-        if (ph) {
-
-            var cullDate = po_analytics.safeStorage.expiryDate("sessionInfo");
-            if (ph.timestamp !== undefined) {
-                if (ph.timestamp < cullDate) {
-                    localStorage.removeItem("sessionInfo");
-                    // delete key and remove cache.
-                    if (po_analytics.safeStorage.pageCache["sessionInfo"]) {
-                        delete po_analytics.safeStorage.pageCache["sessionInfo"];
-                    }
-                    deleted = true;
-                } else {
-                    // session is current, queue for renew
-                    var sessionID = po_analytics.safeStorage.constants.sessionID();
-                    po_analytics.safeStorage.write("local", "sessionInfo", {
-                        id: sessionID
-                    }, true);
-
-                }
-            } else {
-
-                deleted = true;
-            }
-        }
-        if (!ph || deleted) {
-            var sessionID = [{
-                id: po_analytics.support.sessionID()
-            }];
-            // load into memory
-
-            po_analytics.safeStorage.pageCache["sessionInfo"] = {
-                key: po_analytics.safeStorage.constants.key,
-                version: po_analytics.safeStorage.constants.version,
-                v: 0,
-                timestamp: Date.now(),
-                data: sessionID
-            };
-            // write data
-            po_analytics.safeStorage.write("now", "sessionInfo", sessionID, true);
-        }
-
-    },
-    updateItem : function(protocol, identifier, matchKey, keyValue, increment) {
-        // Works in three modes that I remember. Increment is an optional value that allows you to just increment a value (or decrement with a negative value) without having to read it first.
-        // 1. po_analytics.safeStorage.updateItem("local", products", {colour: "red", section: "mens"}, {tracked: "yes", section: "womens"});
-        // Goes through key values and where they match, updates that object. So {productName: "Manchester United Shirt", views: 1, colour: "red", section, "mens", price: 49.99} becomes {productName: "Manchester United Shirt", views: 1, colour: "red", section, "womens", price: 49.99, tracked: "yes"}
-        // This doesn't just update the first match - it updates all of them. Idea is you build up a list of things and then fire them all at once.
-        // 2. po_analytics.safeStorage.updateItem("local", "products", {productName: "Manchester United Shirt"}, "views", 1);
-        // The weak typing in JavaScript means you could also use it to concatenate strings. If you fancy.
-        // returns true if updated, false if no updates.
-        // 3. po_analytics.safeStorage.updateItem("local", "products", {productName: "Manchester United Shirt"}, "delete");
-        // Deletes any keys that match the matckKey.
-        // One more quirk. This defaults to the current session in local mode - you don't need to specifiy it.
-        // If you want to update matching values across all sessions, set the value of sessionID in your matchKey to false, e.g. po_analytics.safeStorage.updateItem("local","pages", {colour: "red", sessionID: false}, {views: 1})  or  po_analytics.safeStorage.updateItem("local", "pages",{colour: "red", sessionID: false}, "delete")
-
-        var ph = po_analytics.safeStorage.read(protocol, identifier);
-        if (keyValue == "delete") {
-            var deletePh = JSON.parse(JSON.stringify(ph));
-            // create a copy for delete purposes
-        }
-        matchKey = po_analytics.safeStorage.currentSessionAppend(protocol, matchKey);
-        var queryType = (typeof increment === 'undefined');
-        var response = false;
-        for (var i = 0; i < ph.length; i++) {
-
-
-            var counter = 0;
-            var matches = 0;
-            for (var property in matchKey) {
-
-                if (ph[i][property] !== undefined) {
-                    counter++;
-                    if (ph[i][property] === matchKey[property]) {
-                        matches++;
-                    }
-
-                }
-            }
-
-            if (matches > 0 && matches == counter) {
-                if (queryType) {
-                    if (keyValue !== "delete") {
-                        for (var property in keyValue) {
-                            ph[i][property] = keyValue[property];
-                            response = true;
                         }
+
+                    }
+
+                }
+            }
+            po_analytics.safeStorage.constants.fired = true;
+            return response;
+
+        },
+        setUpSession : function() {
+            // used to add a session ID
+            var ph = po_analytics.safeStorage.getItem("now", "sessionInfo");
+            var deleted = false;
+            if (ph) {
+
+                var cullDate = po_analytics.safeStorage.expiryDate("sessionInfo");
+                if (ph.timestamp !== undefined) {
+                    if (ph.timestamp < cullDate) {
+                        localStorage.removeItem("sessionInfo");
+                        // delete key and remove cache.
+                        if (po_analytics.safeStorage.pageCache["sessionInfo"]) {
+                            delete po_analytics.safeStorage.pageCache["sessionInfo"];
+                        }
+                        deleted = true;
                     } else {
-                        delete deletePh[i];
-                        response = true;
+                        // session is current, queue for renew
+                        var sessionID = po_analytics.safeStorage.constants.sessionID();
+                        po_analytics.safeStorage.write("local", "sessionInfo", {
+                            id: sessionID
+                        }, true);
+
                     }
                 } else {
-                    ph[i][keyValue] = ph[i][keyValue] !== undefined ? ph[i][keyValue] + increment : increment;
-                    response = true;
-                }
 
+                    deleted = true;
+                }
+            }
+            if (!ph || deleted) {
+                var sessionID = [{
+                    id: po_analytics.support.sessionID()
+                }];
+                // load into memory
+
+                po_analytics.safeStorage.pageCache["sessionInfo"] = {
+                    key: po_analytics.safeStorage.constants.key,
+                    version: po_analytics.safeStorage.constants.version,
+                    v: 0,
+                    timestamp: Date.now(),
+                    data: sessionID
+                };
+                // write data
+                po_analytics.safeStorage.write("now", "sessionInfo", sessionID, true);
             }
 
-        }
+        },
+        updateItem : function(protocol, identifier, matchKey, keyValue, increment) {
+            // Works in three modes that I remember. Increment is an optional value that allows you to just increment a value (or decrement with a negative value) without having to read it first.
+            // 1. po_analytics.safeStorage.updateItem("local", products", {colour: "red", section: "mens"}, {tracked: "yes", section: "womens"});
+            // Goes through key values and where they match, updates that object. So {productName: "Manchester United Shirt", views: 1, colour: "red", section, "mens", price: 49.99} becomes {productName: "Manchester United Shirt", views: 1, colour: "red", section, "womens", price: 49.99, tracked: "yes"}
+            // This doesn't just update the first match - it updates all of them. Idea is you build up a list of things and then fire them all at once.
+            // 2. po_analytics.safeStorage.updateItem("local", "products", {productName: "Manchester United Shirt"}, "views", 1);
+            // The weak typing in JavaScript means you could also use it to concatenate strings. If you fancy.
+            // returns true if updated, false if no updates.
+            // 3. po_analytics.safeStorage.updateItem("local", "products", {productName: "Manchester United Shirt"}, "delete");
+            // Deletes any keys that match the matckKey.
+            // One more quirk. This defaults to the current session in local mode - you don't need to specifiy it.
+            // If you want to update matching values across all sessions, set the value of sessionID in your matchKey to false, e.g. po_analytics.safeStorage.updateItem("local","pages", {colour: "red", sessionID: false}, {views: 1})  or  po_analytics.safeStorage.updateItem("local", "pages",{colour: "red", sessionID: false}, "delete")
 
-        if (response) {
+            var ph = po_analytics.safeStorage.read(protocol, identifier);
             if (keyValue == "delete") {
-
-                ph = [];
-                for (var i = 0; i < deletePh.length; i++) {
-                    if (deletePh[i] !== undefined) {
-                        ph.push(deletePh[i]);
-                    }
-                }
+                var deletePh = JSON.parse(JSON.stringify(ph));
+                // create a copy for delete purposes
             }
-            po_analytics.safeStorage.write(protocol, identifier, ph, true);
-        }
-        return response;
-    },
-    readItem : function(protocol, identifier, matchKey, key) {
-        // reads items in 3 modes
-        // 1. po_analytics.safeStorage.readItem("local", "products", {colour: "red", section: "mens"}, "productName")
-        // Checks the products value for values matching the keys. Returns an array of the values set for the productName key, e.g. ["Manchester United Shirt", "Liverpool FC Shirt"]
-        // 2. po_analytics.safeStorage.readItem("local", "products", {colour: "red", section: "mens"}, "*")
-        // Returns entire matching object in array, e.g.
-        // [{productName: "Manchester United Shirt", colour: "red", section, "mens", price: 49.99},{productName: "Liverpool FC Shirt", colour: "red", section, "mens", price: 49.99}]
-        // To get all matches for the current session, just do po_analytics.safeStorage.readItem("local","products",{},"*")
-        // 3. po_analytics.safeStorage.readItem("local", "products", "productName");
-        // Returns all values in an array that it holds for that key without needing a match, e.g. ["Manchester United Shirt", "Liverpool FC Shirt", "Everton FC Shirt"]
-        // returns false if no results
-        //
-        // One more quirk. This defaults to the current session in local mode - you don't need to specify it.
-        // If you want to return values matching the search across all sessions, set the value of sessionID in your matchKey to false,
-        //  e.g. po_analytics.safeStorage.readItem("local","pages", {colour: "red", sessionID: false}, "productName")
+            matchKey = po_analytics.safeStorage.currentSessionAppend(protocol, matchKey);
+            var queryType = (typeof increment === 'undefined');
+            var response = false;
+            for (var i = 0; i < ph.length; i++) {
 
-        var ph = po_analytics.safeStorage.read(protocol, identifier);
-        var queryType = (typeof key !== 'undefined'); // mode 3 requires this undefined
-        var response = false;
-        var responseData = [];
-        matchKey = po_analytics.safeStorage.currentSessionAppend(protocol, matchKey);
-        for (var i = 0; i < ph.length; i++) {
-            // loop through values to check
-            if (queryType) {
-                // if it's a query with a defined key - needs an object
+
                 var counter = 0;
                 var matches = 0;
-                var items = 0; // for empty objects
                 for (var property in matchKey) {
-                    // loop through match key
-                    items++;
 
                     if (ph[i][property] !== undefined) {
                         counter++;
@@ -1548,237 +1558,316 @@ po_analytics.safeStorage = {
                         }
 
                     }
-                } // end match key loop
-                if ((matches > 0 && matches == counter) || items === 0 ) {
-                    key == "*" || items === 0 ? responseData.push(ph[i]) : responseData.push(ph[i][key]);
                 }
 
-            } else {
-                // matchkey can only be  string
-                if (ph[i][matchKey] !== undefined) {
-                    if ((protocol == "local" || protocol == "now") && identifier != "sessionInfo" && !(matchKey == "id" || matchKey == "sessionID")) {
-                        if (ph[i]["sessionID"] == po_analytics.safeStorage.constants.sessionID()) {
-                            responseData.push(ph[i][matchKey]);
+                if (matches > 0 && matches == counter) {
+                    if (queryType) {
+                        if (keyValue !== "delete") {
+                            for (var property in keyValue) {
+                                ph[i][property] = keyValue[property];
+                                response = true;
+                            }
+                        } else {
+                            delete deletePh[i];
+                            response = true;
                         }
                     } else {
-                        responseData.push(ph[i][matchKey]);
+                        ph[i][keyValue] = ph[i][keyValue] !== undefined ? ph[i][keyValue] + increment : increment;
+                        response = true;
+                    }
+
+                }
+
+            }
+
+            if (response) {
+                if (keyValue == "delete") {
+
+                    ph = [];
+                    for (var i = 0; i < deletePh.length; i++) {
+                        if (deletePh[i] !== undefined) {
+                            ph.push(deletePh[i]);
+                        }
                     }
                 }
+                po_analytics.safeStorage.write(protocol, identifier, ph, true);
             }
-        } // end check loop
-        if (responseData.length > 0) {
-            response = responseData;
-        }
-        return response;
-    },
-    read : function(protocol, identifier, defaultValue) {
-        // *
-        // pulls value from sessionStorage. Protocol is "local" or "session" to denote which storage mechanism to use.
-        //Optional parameter allows you to set default value - but it doesn't write this
-        var ph = (typeof defaultValue === 'undefined') ? [] : defaultValue;
-        var output = po_analytics.safeStorage.getItem(protocol, identifier);
+            return response;
+        },
+        readItem : function(protocol, identifier, matchKey, key) {
+            // reads items in 3 modes
+            // 1. po_analytics.safeStorage.readItem("local", "products", {colour: "red", section: "mens"}, "productName")
+            // Checks the products value for values matching the keys. Returns an array of the values set for the productName key, e.g. ["Manchester United Shirt", "Liverpool FC Shirt"]
+            // 2. po_analytics.safeStorage.readItem("local", "products", {colour: "red", section: "mens"}, "*")
+            // Returns entire matching object in array, e.g.
+            // [{productName: "Manchester United Shirt", colour: "red", section, "mens", price: 49.99},{productName: "Liverpool FC Shirt", colour: "red", section, "mens", price: 49.99}]
+            // To get all matches for the current session, just do po_analytics.safeStorage.readItem("local","products",{},"*")
+            // 3. po_analytics.safeStorage.readItem("local", "products", "productName");
+            // Returns all values in an array that it holds for that key without needing a match, e.g. ["Manchester United Shirt", "Liverpool FC Shirt", "Everton FC Shirt"]
+            // returns false if no results
+            //
+            // One more quirk. This defaults to the current session in local mode - you don't need to specify it.
+            // If you want to return values matching the search across all sessions, set the value of sessionID in your matchKey to false,
+            //  e.g. po_analytics.safeStorage.readItem("local","pages", {colour: "red", sessionID: false}, "productName")
 
-        if (output !== null && output.timestamp !== undefined && output.data) {
-            output = output.data;
-        }
-
-        return output ? output : ph;
-    },
-    getItem : function(protocol, identifier) {
-        // *
-        // used by other functions
-        if (protocol == "local" || protocol == "now") {
-            if (protocol == "now") {
-                var ph = localStorage.getItem(identifier) ? JSON.parse(localStorage.getItem(identifier)) : null;
-            } else {
-                var ph = po_analytics.safeStorage.pageCache[identifier] ? po_analytics.safeStorage.pageCache[identifier] : null;
-            }
-        } else ph = JSON.parse(sessionStorage.getItem(identifier));
-
-        return ph;
-
-    },
-    setItem : function(protocol, identifier, data) {
-        // *
-        // used by other functions
-
-        if (protocol == "local" || protocol == "now") {
-            var increment = protocol == "now" ? 1 : 0;
-            var ph = {
-                key: po_analytics.safeStorage.constants.key,
-                version: po_analytics.safeStorage.constants.version,
-                v: po_analytics.safeStorage.pageCache[identifier] && po_analytics.safeStorage.pageCache[identifier].v ? po_analytics.safeStorage.pageCache[identifier].v + increment : 1,
-                ots: po_analytics.safeStorage.pageCache[identifier] && po_analytics.safeStorage.pageCache[identifier].ots ? po_analytics.safeStorage.pageCache[identifier].ots : Date.now(),
-                updateFlag: true,
-                timestamp: Date.now(),
-                data: data.data ? data.data : data
-            };
-            if (protocol == "now") {
-                delete ph.updateFlag;
-                localStorage.setItem(identifier, JSON.stringify(ph));
-            }
-            po_analytics.safeStorage.pageCache[identifier] = ph;
-        } else sessionStorage.setItem(identifier, JSON.stringify(data));
-
-    },write : function(protocol, identifier, value, replace) { //begin
-        // Writes values to the Storage protocol you select. Replace is optional parameter and defaults to false
-        // If replace is false, it appends a new value to the field.
-        replace = (typeof replace === 'undefined') ? false : replace;
-        if (protocol == "local") {
-
-            po_analytics.safeStorage.constants.fired = false;
-
-        }
-        if (replace) {
-            var ph = [];
-        } else {
             var ph = po_analytics.safeStorage.read(protocol, identifier);
-        }
-        var ts = Date.now();
-        if ((protocol == "local" || protocol == "now")) {
+            var queryType = (typeof key !== 'undefined'); // mode 3 requires this undefined
+            var response = false;
+            var responseData = [];
+            matchKey = po_analytics.safeStorage.currentSessionAppend(protocol, matchKey);
+            for (var i = 0; i < ph.length; i++) {
+                // loop through values to check
+                if (queryType) {
+                    // if it's a query with a defined key - needs an object
+                    var counter = 0;
+                    var matches = 0;
+                    var items = 0; // for empty objects
+                    for (var property in matchKey) {
+                        // loop through match key
+                        items++;
 
-            var currentSession = po_analytics.safeStorage.constants.sessionID();
-            var versionIdent = po_analytics.safeStorage.pageCache[identifier] && po_analytics.safeStorage.pageCache[identifier].v ? po_analytics.safeStorage.pageCache[identifier].v + 1 : 1;
+                        if (ph[i][property] !== undefined) {
+                            counter++;
+                            if (ph[i][property] === matchKey[property]) {
+                                matches++;
+                            }
 
-        } else {
-            var currentSession = 0;
-            var versionIdent = 0;
-
-        }
-
-        if (Array.isArray(value)) { // [{test: 1, hello: "there"}, {test: 2, hello: "bye"}]
-            for (var i = 0; i < value.length; i++) {
-                if (typeof value[i] == "object") {
-                    value[i].sessionID = value[i].sessionID ? value[i].sessionID : currentSession;
-                    value[i].v = value[i].v ? value[i].v : versionIdent;
-                    value[i].ts = value[i].ts ? value[i].ts : ts;
-                }
-                ph.push(value[i]);
-
-            }
-        } else if (typeof value == "object") // {test: 1, hello: "there"}
-        {
-            value.sessionID = value.sessionID ? value.sessionID : currentSession;
-            value.v = value.v ? value.v : versionIdent;
-            value.ts = value.ts ? value.ts : ts;
-            ph.push(value);
-
-        } else {
-            ph.push(value);
-        }
-
-        po_analytics.safeStorage.setItem(protocol, identifier, ph);
-
-
-    },notDuplicate : function(protocol, identifier, matchKey, checkOnly, keyValue) {
-        // Checks to see if the value already exists and returns true or false.
-        // checkOnly and keyValue are optional parameters
-        // checkOnly is true - no updates made, false, it writes the update.
-        // keyValue allows you to specify a different update to what you're checking for. E.g.
-        // 1. po_analytics.safeStorage.notDuplicate("local", "pages",{colour: "red", product: "Fruit of the Loom T-Shirt"}, false, {colour: "red", product: "Fruit of the Loom T-Shirt", views: 1, userStatus: "not Logged in"}) adds the second object to the pages object if there's no matching value in there with colour "red" and product name "Fruit of the Loom"
-        // 2. po_analytics.safeStorage.notDuplicate("local", "pages",{colour: "red", product: "Fruit of the Loom T-Shirt"})
-        // Checks if that key exists, same as po_analytics.safeStorage.notDuplicate("pages",{colour: "red", product: "Fruit of the Loom T-Shirt"}, true)
-        // 3. po_analytics.safeStorage.notDuplicate("local", pages",{colour: "red", product: "Fruit of the Loom T-Shirt"},false)
-        // Checks if values exist, if not writes it and returns true, if it exists, returns false - no writing.
-        // One more quirk. notDuplicate defaults to the current session in local mode - you don't need to specifiy it.
-        // If you want to de-dupe against all sessions, set the value of sessionID in your matchKey to false, e.g. po_analytics.safeStorage.notDuplicate("local","pages", {colour: "red", sessionID: false}, false, {colour: "red", product: "Fruit of the Loom T-Shirt", views: 1})
-        checkOnly = (typeof checkOnly === 'undefined') ? true : checkOnly;
-        //matchKey = po_analytics.safeStorage.currentSessionAppend(protocol, matchKey);
-
-        keyValue = (typeof keyValue === 'undefined') ? matchKey : keyValue;
-
-
-        var checkForValues = po_analytics.safeStorage.readItem(protocol, identifier, matchKey, "*");
-        if (checkForValues) {
-            return false;
-        } else {
-            if (!checkOnly) {
-                po_analytics.safeStorage.write(protocol, identifier, keyValue);
-            }
-            return true;
-        }
-    }, currentSessionAppend : function(protocol, matchKey) {
-        if ((protocol == "local" || protocol == "now") && typeof matchKey == "object") {
-            if (matchKey.sessionID === undefined) {
-                // set current sessionID
-                matchKey.sessionID = po_analytics.safeStorage.constants.sessionID();
-            } else if (matchKey.sessionID === false) {
-                delete matchKey.sessionID;
-            }
-        }
-        return matchKey;
-
-    },expiryDate : function(key) {
-
-        var cullDate = "";
-        if (po_analytics.safeStorage.constants.mode == "expire" || key == "sessionInfo") {
-            cullDate = Date.now() - (po_analytics.safeStorage.constants.expireTime * 60000);
-        } else {
-            cullDate = Date.now() - (po_analytics.safeStorage.constants.daysExpire * 1000 * 60 * 60 * 24);
-        }
-        return cullDate;
-    },
-    processData : function() {
-        // function only called if using localStorage
-        for (var key in localStorage) {
-            if (key !== "sessionInfo") {
-                // loop through keys
-                var ph = localStorage[key];
-                var deleted = false;
-
-                if (ph.indexOf(po_analytics.safeStorage.constants.key) > -1 && ph.indexOf("timestamp") > -1 && ph.indexOf("}") > -1) {
-                    // it's one of ours load
-                    ph = JSON.parse(ph);
-                    // work out expire date
-                    var cullDate = po_analytics.safeStorage.expiryDate(key);
-                    if (ph.timestamp !== undefined && ph.timestamp < cullDate) {
-                        // delete group, too old
-                        localStorage.removeItem(key);
-                        deleted = true;
-
+                        }
+                    } // end match key loop
+                    if ((matches > 0 && matches == counter) || items === 0 ) {
+                        key == "*" || items === 0 ? responseData.push(ph[i]) : responseData.push(ph[i][key]);
                     }
-                    if (po_analytics.safeStorage.constants.mode == "days" && !deleted) {
-                        // also need to delete things from old sessions
-                        var output = [];
-                        var update = false;
-                        if (ph.data) {
-                            // check for expired stuff
-                            for (var i = 0; i < ph.data.length; i++) {
-                                if (ph.data[i].sessionID) {
-                                    var sessionDate = parseInt(ph.data[i].sessionID.split(".")[0]);
-                                    if (sessionDate > cullDate) {
-                                        output.push(ph.data[i]);
-                                    } else {
-                                        update = true;
-                                    }
 
+                } else {
+                    // matchkey can only be  string
+                    if (ph[i][matchKey] !== undefined) {
+                        if ((protocol == "local" || protocol == "now") && identifier != "sessionInfo" && !(matchKey == "id" || matchKey == "sessionID")) {
+                            if (ph[i]["sessionID"] == po_analytics.safeStorage.constants.sessionID()) {
+                                responseData.push(ph[i][matchKey]);
+                            }
+                        } else {
+                            responseData.push(ph[i][matchKey]);
+                        }
+                    }
+                }
+            } // end check loop
+            if (responseData.length > 0) {
+                response = responseData;
+            }
+            return response;
+        },
+        read : function(protocol, identifier, defaultValue) {
+            // *
+            // pulls value from sessionStorage. Protocol is "local" or "session" to denote which storage mechanism to use.
+            //Optional parameter allows you to set default value - but it doesn't write this
+            var ph = (typeof defaultValue === 'undefined') ? [] : defaultValue;
+            var output = po_analytics.safeStorage.getItem(protocol, identifier);
+
+            if (output !== null && output.timestamp !== undefined && output.data) {
+                output = output.data;
+            }
+
+            return output ? output : ph;
+        },
+        getItem : function(protocol, identifier) {
+            // *
+            // used by other functions
+            if (protocol == "local" || protocol == "now") {
+                if (protocol == "now") {
+                    var ph = localStorage.getItem(identifier) ? JSON.parse(localStorage.getItem(identifier)) : null;
+                } else {
+                    var ph = po_analytics.safeStorage.pageCache[identifier] ? po_analytics.safeStorage.pageCache[identifier] : null;
+                }
+            } else ph = JSON.parse(sessionStorage.getItem(identifier));
+
+            return ph;
+
+        },
+        setItem : function(protocol, identifier, data) {
+            // *
+            // used by other functions
+
+            if (protocol == "local" || protocol == "now") {
+                var increment = protocol == "now" ? 1 : 0;
+                var ph = {
+                    key: po_analytics.safeStorage.constants.key,
+                    version: po_analytics.safeStorage.constants.version,
+                    v: po_analytics.safeStorage.pageCache[identifier] && po_analytics.safeStorage.pageCache[identifier].v ? po_analytics.safeStorage.pageCache[identifier].v + increment : 1,
+                    ots: po_analytics.safeStorage.pageCache[identifier] && po_analytics.safeStorage.pageCache[identifier].ots ? po_analytics.safeStorage.pageCache[identifier].ots : Date.now(),
+                    updateFlag: true,
+                    timestamp: Date.now(),
+                    data: data.data ? data.data : data
+                };
+                if (protocol == "now") {
+                    delete ph.updateFlag;
+                    localStorage.setItem(identifier, JSON.stringify(ph));
+                }
+                po_analytics.safeStorage.pageCache[identifier] = ph;
+            } else sessionStorage.setItem(identifier, JSON.stringify(data));
+
+        },write : function(protocol, identifier, value, replace) { //begin
+            // Writes values to the Storage protocol you select. Replace is optional parameter and defaults to false
+            // If replace is false, it appends a new value to the field.
+            replace = (typeof replace === 'undefined') ? false : replace;
+            if (protocol == "local") {
+
+                po_analytics.safeStorage.constants.fired = false;
+
+            }
+            if (replace) {
+                var ph = [];
+            } else {
+                var ph = po_analytics.safeStorage.read(protocol, identifier);
+            }
+            var ts = Date.now();
+            if ((protocol == "local" || protocol == "now")) {
+
+                var currentSession = po_analytics.safeStorage.constants.sessionID();
+                var versionIdent = po_analytics.safeStorage.pageCache[identifier] && po_analytics.safeStorage.pageCache[identifier].v ? po_analytics.safeStorage.pageCache[identifier].v + 1 : 1;
+
+            } else {
+                var currentSession = 0;
+                var versionIdent = 0;
+
+            }
+
+            if (Array.isArray(value)) { // [{test: 1, hello: "there"}, {test: 2, hello: "bye"}]
+                for (var i = 0; i < value.length; i++) {
+                    if (typeof value[i] == "object") {
+                        value[i].sessionID = value[i].sessionID ? value[i].sessionID : currentSession;
+                        value[i].v = value[i].v ? value[i].v : versionIdent;
+                        value[i].ts = value[i].ts ? value[i].ts : ts;
+                    }
+                    ph.push(value[i]);
+
+                }
+            } else if (typeof value == "object") // {test: 1, hello: "there"}
+            {
+                value.sessionID = value.sessionID ? value.sessionID : currentSession;
+                value.v = value.v ? value.v : versionIdent;
+                value.ts = value.ts ? value.ts : ts;
+                ph.push(value);
+
+            } else {
+                ph.push(value);
+            }
+
+            po_analytics.safeStorage.setItem(protocol, identifier, ph);
+
+
+        },notDuplicate : function(protocol, identifier, matchKey, checkOnly, keyValue) {
+            // Checks to see if the value already exists and returns true or false.
+            // checkOnly and keyValue are optional parameters
+            // checkOnly is true - no updates made, false, it writes the update.
+            // keyValue allows you to specify a different update to what you're checking for. E.g.
+            // 1. po_analytics.safeStorage.notDuplicate("local", "pages",{colour: "red", product: "Fruit of the Loom T-Shirt"}, false, {colour: "red", product: "Fruit of the Loom T-Shirt", views: 1, userStatus: "not Logged in"}) adds the second object to the pages object if there's no matching value in there with colour "red" and product name "Fruit of the Loom"
+            // 2. po_analytics.safeStorage.notDuplicate("local", "pages",{colour: "red", product: "Fruit of the Loom T-Shirt"})
+            // Checks if that key exists, same as po_analytics.safeStorage.notDuplicate("pages",{colour: "red", product: "Fruit of the Loom T-Shirt"}, true)
+            // 3. po_analytics.safeStorage.notDuplicate("local", pages",{colour: "red", product: "Fruit of the Loom T-Shirt"},false)
+            // Checks if values exist, if not writes it and returns true, if it exists, returns false - no writing.
+            // One more quirk. notDuplicate defaults to the current session in local mode - you don't need to specifiy it.
+            // If you want to de-dupe against all sessions, set the value of sessionID in your matchKey to false, e.g. po_analytics.safeStorage.notDuplicate("local","pages", {colour: "red", sessionID: false}, false, {colour: "red", product: "Fruit of the Loom T-Shirt", views: 1})
+            checkOnly = (typeof checkOnly === 'undefined') ? true : checkOnly;
+            //matchKey = po_analytics.safeStorage.currentSessionAppend(protocol, matchKey);
+
+            keyValue = (typeof keyValue === 'undefined') ? matchKey : keyValue;
+
+
+            var checkForValues = po_analytics.safeStorage.readItem(protocol, identifier, matchKey, "*");
+            if (checkForValues) {
+                return false;
+            } else {
+                if (!checkOnly) {
+                    po_analytics.safeStorage.write(protocol, identifier, keyValue);
+                }
+                return true;
+            }
+        }, currentSessionAppend : function(protocol, matchKey) {
+            if ((protocol == "local" || protocol == "now") && typeof matchKey == "object") {
+                if (matchKey.sessionID === undefined) {
+                    // set current sessionID
+                    matchKey.sessionID = po_analytics.safeStorage.constants.sessionID();
+                } else if (matchKey.sessionID === false) {
+                    delete matchKey.sessionID;
+                }
+            }
+            return matchKey;
+
+        },expiryDate : function(key) {
+
+            var cullDate = "";
+            if (po_analytics.safeStorage.constants.mode == "expire" || key == "sessionInfo") {
+                cullDate = Date.now() - (po_analytics.safeStorage.constants.expireTime * 60000);
+            } else {
+                cullDate = Date.now() - (po_analytics.safeStorage.constants.daysExpire * 1000 * 60 * 60 * 24);
+            }
+            return cullDate;
+        },
+        processData : function() {
+            // function only called if using localStorage
+            for (var key in localStorage) {
+                if (key !== "sessionInfo") {
+                    // loop through keys
+                    var ph = localStorage[key];
+                    var deleted = false;
+
+                    if (ph.indexOf(po_analytics.safeStorage.constants.key) > -1 && ph.indexOf("timestamp") > -1 && ph.indexOf("}") > -1) {
+                        // it's one of ours load
+                        ph = JSON.parse(ph);
+                        // work out expire date
+                        var cullDate = po_analytics.safeStorage.expiryDate(key);
+                        if (ph.timestamp !== undefined && ph.timestamp < cullDate) {
+                            // delete group, too old
+                            localStorage.removeItem(key);
+                            deleted = true;
+
+                        }
+                        if (po_analytics.safeStorage.constants.mode == "days" && !deleted) {
+                            // also need to delete things from old sessions
+                            var output = [];
+                            var update = false;
+                            if (ph.data) {
+                                // check for expired stuff
+                                for (var i = 0; i < ph.data.length; i++) {
+                                    if (ph.data[i].sessionID) {
+                                        var sessionDate = parseInt(ph.data[i].sessionID.split(".")[0]);
+                                        if (sessionDate > cullDate) {
+                                            output.push(ph.data[i]);
+                                        } else {
+                                            update = true;
+                                        }
+
+                                    }
+                                } // end expired check
+                                if (update) { // queue data for update
+                                    if (ph.data.length == 0) {
+                                        localStorage.removeItem(key);
+                                        deleted = true;
+                                    } else {
+                                        ph.data = output;
+                                        ph.updateFlag = true;
+                                        ph.timestamp = Date.now();
+                                        po_analytics.safeStorage.write("local", key, ph, true);
+                                    }
+                                } else { // no need to queue data for update
+                                    ph.updateFlag = false;
                                 }
-                            } // end expired check
-                            if (update) { // queue data for update
-                                if (ph.data.length == 0) {
-                                    localStorage.removeItem(key);
-                                    deleted = true;
-                                } else {
-                                    ph.data = output;
-                                    ph.updateFlag = true;
-                                    ph.timestamp = Date.now();
-                                    po_analytics.safeStorage.write("local", key, ph, true);
-                                }
-                            } else { // no need to queue data for update
-                                ph.updateFlag = false;
+                            }
+                        }
+                        if (!deleted) {
+                            ph.ots = Date.now(); // time when loaded
+                            po_analytics.safeStorage.pageCache[key] = ph;
+                        } else {
+                            if (po_analytics.safeStorage.pageCache[key]) {
+                                delete po_analytics.safeStorage.pageCache[key];
                             }
                         }
                     }
-                    if (!deleted) {
-                        ph.ots = Date.now(); // time when loaded
-                        po_analytics.safeStorage.pageCache[key] = ph;
-                    } else {
-                        if (po_analytics.safeStorage.pageCache[key]) {
-                            delete po_analytics.safeStorage.pageCache[key];
-                        }
-                    }
                 }
-            }
-        } // end of key loop
+            } // end of key loop
+        }
     }
 };
+
+
+
